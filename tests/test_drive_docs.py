@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from x_bookmark.docs_format import append_requests, section_body, section_heading
 from x_bookmark.records import to_record
@@ -79,8 +81,51 @@ class FakeDriveSyncTests(unittest.TestCase):
         index_id = plan["index_doc"]["id"]
         text = client.docs_text[index_id]
         self.assertIn("X Bookmarks — index", text)
+        self.assertIn("Glossary", text)
+        glossary_at = text.find("Glossary")
+        self.assertGreaterEqual(glossary_at, 0)
+        self.assertLess(glossary_at, text.find("Drive folder:"))
         self.assertIn("AI (", text)
         self.assertIn("needs-review (", text)
+
+    def test_topic_doc_glossary_and_newest_first(self) -> None:
+        extra = {
+            "count": 2,
+            "posts": [
+                {
+                    "id": "2000000000000000001",
+                    "author": "fixture_ai",
+                    "created_at": "2026-09-10T00:00:00.000Z",
+                    "text": "[FIXTURE] Older GPT notes.",
+                },
+                {
+                    "id": "2000000000000000002",
+                    "author": "fixture_ai",
+                    "created_at": "2026-09-18T00:00:00.000Z",
+                    "text": "[FIXTURE] Newer large language model note.",
+                },
+            ],
+        }
+        client = FakeDriveClient()
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "two-ai.json"
+            path.write_text(json.dumps(extra), encoding="utf-8")
+            plan = sync(path, live=True, drive_client=client)
+        ai_id = plan["topic_docs"]["AI"]["id"]
+        text = client.docs_text[ai_id]
+        self.assertLess(text.find("Glossary"), text.find("Contents"))
+        self.assertLess(text.find("2026-09-18"), text.find("2026-09-10"))
+        self.assertIn("[FIXTURE] Newer large language model note.", text)
+        self.assertIn("[FIXTURE] Older GPT notes.", text)
+
+    def test_unparsed_preamble_is_kept(self) -> None:
+        client = FakeDriveClient()
+        meta = client.create_doc(client.folder_id, "AI")
+        client.docs_text[meta["id"]] = "AI\n\nKeep this operator note.\n"
+        plan = sync(FIXTURE, live=True, drive_client=client)
+        text = client.docs_text[plan["topic_docs"]["AI"]["id"]]
+        self.assertIn("Keep this operator note.", text)
+        self.assertIn("[FIXTURE] Large language models", text)
 
 
 if __name__ == "__main__":

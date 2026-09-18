@@ -21,3 +21,11 @@ jobs:
           python -m x_bookmark sync --input fixtures/bookmarks.fixture.json --dry-run --out /tmp/preview-out | tee /tmp/second.txt
           grep -q "skipped:  5" /tmp/second.txt
           grep -q "imported: 0" /tmp/second.txt
+      - name: Obsidian dry-run against fixture
+        run: python -m x_bookmark sync --input fixtures/bookmarks.fixture.json --sink obsidian --out /tmp/vault-preview
+      - name: Obsidian second dry-run skips imported x_ids
+        run: |
+          python -m x_bookmark sync --input fixtures/bookmarks.fixture.json --sink obsidian --out /tmp/vault-preview | tee /tmp/obsidian-second.txt
+          grep -q "skipped:  5" /tmp/obsidian-second.txt
+          grep -q "imported: 0" /tmp/obsidian-second.txt
+          test -f /tmp/vault-preview/Index.md
