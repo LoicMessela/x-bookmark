@@ -1,0 +1,23 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+.python-version
+
+# Google auth material — never commit
+credentials.json
+client_secret*.json
+token.json
+service-account*.json
+*-sa.json
+
+# Live bookmark dumps (fixtures/ is tracked)
+exports/
+preview-out/_live/

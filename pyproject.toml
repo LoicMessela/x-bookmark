@@ -1,0 +1,25 @@
+[project]
+name = "x-bookmark"
+version = "0.1.0"
+description = "Read-only X bookmark export → topic classify → Google Docs in Drive."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+drive = [
+    "google-api-python-client>=2.100.0",
+    "google-auth>=2.23.0",
+    "google-auth-httplib2>=0.1.1",
+]
+
+[project.scripts]
+x-bookmark = "x_bookmark.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["x_bookmark*"]

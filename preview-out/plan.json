@@ -1,0 +1,28 @@
+{
+  "already_imported_in_index": 0,
+  "drive_writes": false,
+  "folder_id": "1sF85Lq7kU9y8y73GPyNqFl9I2ACayQBG",
+  "folder_url": "https://drive.google.com/drive/folders/1sF85Lq7kU9y8y73GPyNqFl9I2ACayQBG",
+  "imported": 5,
+  "mode": "dry-run",
+  "note": "Dry-run only. No Google Drive or Docs API calls were made. Pass --live after auth to append these sections to Jabba's folder.",
+  "sink": "google-docs-via-drive (planned)",
+  "skipped": 0,
+  "would_append": {
+    "AI": 1,
+    "Career": 1,
+    "Fashion": 1,
+    "Markets": 1,
+    "needs-review": 1
+  },
+  "would_ensure_docs": [
+    "AI",
+    "Career",
+    "Fashion",
+    "Markets",
+    "Media",
+    "Misc",
+    "needs-review"
+  ],
+  "would_update_index_doc": true
+}
