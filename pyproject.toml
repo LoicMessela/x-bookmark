@@ -1,7 +1,7 @@
 [project]
 name = "x-bookmark"
 version = "0.1.0"
-description = "Read-only X bookmark export → topic classify → Google Docs in Drive."
+description = "Read-only X bookmark export → topic classify → Google Docs or Obsidian Markdown on Drive."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }

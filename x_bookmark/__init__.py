@@ -1,4 +1,4 @@
-"""X bookmark export → classify → Google Docs (Drive) sync."""
+"""X bookmark export → classify → Google Docs or Obsidian Markdown on Drive."""
 
 from x_bookmark.classify import Classification, classify
 from x_bookmark.constants import DEFAULT_DRIVE_FOLDER_ID, TOPIC_DOCS

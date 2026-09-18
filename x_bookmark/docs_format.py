@@ -1,12 +1,12 @@
 """Plain-text bodies for Google Docs sections and the master index.
 
-These strings are inserted via the Docs API (live) or shown in dry-run plans.
-They are not an Obsidian vault layout.
+These strings are inserted via the Docs API (live) or shown in Docs dry-run plans.
+Obsidian Markdown lives in x_bookmark.obsidian_format.
 """
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from x_bookmark.constants import ALL_DOC_NAMES, DEFAULT_DRIVE_FOLDER_URL, SOURCE
 
@@ -52,12 +52,7 @@ def index_document_text(
     lines = [
         "X Bookmarks — index",
         "",
-        f"Drive folder: {folder_url}",
-        f"Last sync: {last_sync or '(not yet)'}",
-        "",
-        "One Google Doc per topic. Incremental sync appends new x_id sections only.",
-        "",
-        "Topics",
+        "Glossary",
         "",
     ]
     for name in ALL_DOC_NAMES:
@@ -65,8 +60,162 @@ def index_document_text(
         count = int(meta.get("count") or 0)
         url = meta.get("url") or "(doc not created yet)"
         lines.append(f"- {name} ({count}) — {url}")
-    lines.append("")
+    lines.extend(
+        [
+            "",
+            f"Drive folder: {folder_url}",
+            f"Last sync: {last_sync or '(not yet)'}",
+            "",
+            "One Google Doc per topic. New x_id sections only; newest saved_at first.",
+            "",
+        ]
+    )
     return "\n".join(lines)
+
+
+def is_section_heading(line: str) -> bool:
+    parts = line.split(" — ")
+    if len(parts) < 3:
+        return False
+    date = parts[0]
+    if date == "undated":
+        return True
+    return len(date) == 10 and date[4] == "-" and date[7] == "-"
+
+
+def parse_doc_sections(text: str) -> list[dict[str, str]]:
+    """Split generated Doc text into dated sections. Header/glossary is dropped."""
+    lines = str(text or "").split("\n")
+    starts = [i for i, line in enumerate(lines) if is_section_heading(line)]
+    sections: list[dict[str, str]] = []
+    for idx, start in enumerate(starts):
+        end = starts[idx + 1] if idx + 1 < len(starts) else len(lines)
+        chunk = lines[start:end]
+        while chunk and chunk[-1] == "":
+            chunk.pop()
+        body = "\n".join(chunk) + "\n"
+        heading = lines[start]
+        saved_at = ""
+        x_id = heading.split(" — ")[-1] if " — " in heading else ""
+        for raw in chunk:
+            if raw.startswith("saved_at:"):
+                saved_at = raw.split(":", 1)[1].strip()
+            elif raw.startswith("x_id:"):
+                x_id = raw.split(":", 1)[1].strip()
+        sections.append(
+            {"heading": heading, "body": body, "saved_at": saved_at, "x_id": str(x_id)}
+        )
+    return sections
+
+
+def leftover_unparsed_text(text: str, doc_name: str) -> str:
+    """Keep non-generated preamble that is not title/glossary/TOC."""
+    lines = str(text or "").split("\n")
+    starts = [i for i, line in enumerate(lines) if is_section_heading(line)]
+    preamble = lines[: starts[0]] if starts else lines
+    keep: list[str] = []
+    skip_prefixes = (
+        "Drive folder:",
+        "Last sync:",
+        "One Google Doc",
+        "url:",
+        "author:",
+        "x_id:",
+        "saved_at:",
+        "topics:",
+        "confidence:",
+        "source:",
+    )
+    skip_exact = {
+        doc_name,
+        "X Bookmarks — index",
+        "Glossary",
+        "Contents",
+        "Topics",
+        "",
+    }
+    for line in preamble:
+        stripped = line.strip()
+        if stripped in skip_exact:
+            continue
+        if stripped.startswith("- "):
+            continue
+        if any(stripped.startswith(p) for p in skip_prefixes):
+            continue
+        keep.append(line)
+    leftover = "\n".join(keep).strip()
+    return leftover
+
+
+def sort_sections_newest_first(sections: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    dated = [s for s in sections if str(s.get("saved_at") or "")]
+    undated = [s for s in sections if not str(s.get("saved_at") or "")]
+    dated_sorted = sorted(
+        dated, key=lambda s: str(s.get("saved_at") or ""), reverse=True
+    )
+    return list(dated_sorted) + list(undated)
+
+
+def topic_document_text(
+    name: str,
+    sections: Sequence[Mapping[str, Any]],
+    topic_docs: Mapping[str, Mapping[str, Any]],
+    *,
+    index_url: str = "",
+    leftover: str = "",
+) -> str:
+    ordered = sort_sections_newest_first(list(sections))
+    lines = [name, "", "Glossary", ""]
+    if index_url:
+        lines.append(f"- _index — {index_url}")
+    for topic in ALL_DOC_NAMES:
+        meta = topic_docs.get(topic) or {}
+        url = meta.get("url") or ""
+        marker = " (this Doc)" if topic == name else ""
+        lines.append(f"- {topic}{marker} — {url}")
+    lines.extend(["", "Contents", ""])
+    if ordered:
+        for sec in ordered:
+            lines.append(f"- {sec.get('heading') or ''}")
+    else:
+        lines.append("- (none)")
+    lines.append("")
+    for sec in ordered:
+        body = str(sec.get("body") or "").rstrip("\n")
+        lines.append(body)
+        lines.append("")
+    extra = leftover.strip()
+    if extra:
+        lines.extend(["Unparsed", "", extra, ""])
+    return "\n".join(lines)
+
+
+def heading_style_requests(text: str, insert_index: int = 1) -> list[dict[str, Any]]:
+    """Docs batchUpdate paragraph styles for a fully replaced document body."""
+    requests: list[dict[str, Any]] = []
+    idx = insert_index
+    for i, line in enumerate(text.split("\n")):
+        start = idx
+        end = idx + len(line)
+        style = None
+        if line and i == 0:
+            style = "HEADING_1"
+        elif line in {"Glossary", "Contents", "Topics", "Unparsed"} or is_section_heading(
+            line
+        ):
+            style = "HEADING_2"
+        if style and end > start:
+            requests.append(
+                {
+                    "updateParagraphStyle": {
+                        "range": {"startIndex": start, "endIndex": end},
+                        "paragraphStyle": {"namedStyleType": style},
+                        "fields": "namedStyleType",
+                    }
+                }
+            )
+        idx = end + 1
+    return requests
 
 
 def heading_range(insert_index: int, heading: str) -> tuple[int, int]:

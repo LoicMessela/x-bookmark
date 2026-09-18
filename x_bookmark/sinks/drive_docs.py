@@ -19,8 +19,17 @@ from x_bookmark.constants import (
     DEFAULT_DRIVE_FOLDER_URL,
     IMPORT_INDEX_NAME,
     INDEX_DOC_NAME,
+    MARKDOWN_MIME,
 )
-from x_bookmark.docs_format import append_requests, index_document_text
+from x_bookmark.docs_format import (
+    heading_style_requests,
+    index_document_text,
+    leftover_unparsed_text,
+    parse_doc_sections,
+    section_body,
+    section_heading,
+    topic_document_text,
+)
 from x_bookmark.import_index import add_imported, empty_index, merge_index
 
 DOC_MIME = "application/vnd.google-apps.document"
@@ -38,9 +47,21 @@ class DriveClient(Protocol):
 
     def create_doc(self, folder_id: str, name: str) -> dict[str, Any]: ...
 
+    def create_folder(self, folder_id: str, name: str) -> dict[str, Any]: ...
+
     def upsert_json(self, folder_id: str, name: str, payload: dict[str, Any]) -> dict[str, Any]: ...
 
     def download_json(self, file_id: str) -> dict[str, Any]: ...
+
+    def upsert_text_file(
+        self, folder_id: str, name: str, text: str, mime: str = MARKDOWN_MIME
+    ) -> dict[str, Any]: ...
+
+    def download_text(self, file_id: str) -> str: ...
+
+    def list_files(self, folder_id: str) -> list[dict[str, Any]]: ...
+
+    def get_document_text(self, doc_id: str) -> str: ...
 
     def doc_end_index(self, doc_id: str) -> int: ...
 
@@ -61,6 +82,7 @@ class FakeDriveClient:
         self.files: dict[str, dict[str, Any]] = {}
         self.docs_text: dict[str, str] = {}
         self.json_blobs: dict[str, dict[str, Any]] = {}
+        self.text_blobs: dict[str, str] = {}
         self._n = 0
         self.files[folder_id] = {
             "id": folder_id,
@@ -132,6 +154,59 @@ class FakeDriveClient:
 
     def replace_doc_text(self, doc_id: str, text: str) -> None:
         self.docs_text[doc_id] = text if text.endswith("\n") else text + "\n"
+
+    def get_document_text(self, doc_id: str) -> str:
+        return self.docs_text.get(doc_id, "\n")
+
+    def create_folder(self, folder_id: str, name: str) -> dict[str, Any]:
+        existing = self.find_file(folder_id, name)
+        if existing:
+            if existing.get("mimeType") != FOLDER_MIME:
+                raise RuntimeError(
+                    f"Drive item {name!r} exists but is not a folder "
+                    f"(mime {existing.get('mimeType')})"
+                )
+            return existing
+        file_id = self._id("folder")
+        meta = {
+            "id": file_id,
+            "name": name,
+            "mimeType": FOLDER_MIME,
+            "parents": [folder_id],
+        }
+        self.files[file_id] = meta
+        return dict(meta)
+
+    def upsert_text_file(
+        self, folder_id: str, name: str, text: str, mime: str = MARKDOWN_MIME
+    ) -> dict[str, Any]:
+        existing = self.find_file(folder_id, name)
+        if existing:
+            self.text_blobs[existing["id"]] = text
+            existing["mimeType"] = mime
+            self.files[existing["id"]]["mimeType"] = mime
+            return dict(existing)
+        file_id = self._id("md")
+        meta = {
+            "id": file_id,
+            "name": name,
+            "mimeType": mime,
+            "parents": [folder_id],
+            "webViewLink": f"https://drive.google.com/file/d/{file_id}/view",
+        }
+        self.files[file_id] = meta
+        self.text_blobs[file_id] = text
+        return dict(meta)
+
+    def download_text(self, file_id: str) -> str:
+        return self.text_blobs.get(file_id, "")
+
+    def list_files(self, folder_id: str) -> list[dict[str, Any]]:
+        out = []
+        for meta in self.files.values():
+            if folder_id in (meta.get("parents") or []):
+                out.append(dict(meta))
+        return out
 
 
 class GoogleDriveClient:
@@ -280,17 +355,109 @@ class GoogleDriveClient:
             )
         if text:
             requests.append({"insertText": {"location": {"index": 1}, "text": text}})
-            first_line = text.split("\n", 1)[0]
-            requests.append(
-                {
-                    "updateParagraphStyle": {
-                        "range": {"startIndex": 1, "endIndex": 1 + len(first_line)},
-                        "paragraphStyle": {"namedStyleType": "HEADING_1"},
-                        "fields": "namedStyleType",
-                    }
-                }
-            )
+            requests.extend(heading_style_requests(text, insert_index=1))
         self.batch_update(doc_id, requests)
+
+    def get_document_text(self, doc_id: str) -> str:
+        doc = self.docs.documents().get(documentId=doc_id).execute()
+        chunks: list[str] = []
+        for el in doc.get("body", {}).get("content") or []:
+            para = el.get("paragraph")
+            if not para:
+                continue
+            pieces = []
+            for run in para.get("elements") or []:
+                pieces.append((run.get("textRun") or {}).get("content") or "")
+            chunks.append("".join(pieces))
+        return "".join(chunks)
+
+    def create_folder(self, folder_id: str, name: str) -> dict[str, Any]:
+        existing = self.find_file(folder_id, name)
+        if existing:
+            if existing.get("mimeType") != FOLDER_MIME:
+                raise RuntimeError(
+                    f"Drive item {name!r} exists but is not a folder "
+                    f"(mime {existing.get('mimeType')})"
+                )
+            return existing
+        return (
+            self.drive.files()
+            .create(
+                body={
+                    "name": name,
+                    "mimeType": FOLDER_MIME,
+                    "parents": [folder_id],
+                },
+                fields="id,name,mimeType,webViewLink",
+                supportsAllDrives=True,
+            )
+            .execute()
+        )
+
+    def upsert_text_file(
+        self, folder_id: str, name: str, text: str, mime: str = MARKDOWN_MIME
+    ) -> dict[str, Any]:
+        raw = text.encode("utf-8")
+        media = self._MediaIoBaseUpload(io.BytesIO(raw), mimetype=mime, resumable=False)
+        existing = self.find_file(folder_id, name)
+        if existing:
+            mime_now = str(existing.get("mimeType") or "")
+            if mime_now.startswith("application/vnd.google-apps."):
+                raise RuntimeError(
+                    f"Refusing to overwrite Google Workspace file {name!r} "
+                    f"({mime_now}); Obsidian notes must stay text/markdown."
+                )
+            return (
+                self.drive.files()
+                .update(
+                    fileId=existing["id"],
+                    media_body=media,
+                    fields="id,name,mimeType,webViewLink",
+                    supportsAllDrives=True,
+                )
+                .execute()
+            )
+        return (
+            self.drive.files()
+            .create(
+                body={
+                    "name": name,
+                    "parents": [folder_id],
+                    "mimeType": mime,
+                },
+                media_body=media,
+                fields="id,name,mimeType,webViewLink",
+                supportsAllDrives=True,
+            )
+            .execute()
+        )
+
+    def download_text(self, file_id: str) -> str:
+        data = self.drive.files().get_media(fileId=file_id, supportsAllDrives=True).execute()
+        if isinstance(data, bytes):
+            return data.decode("utf-8")
+        return str(data)
+
+    def list_files(self, folder_id: str) -> list[dict[str, Any]]:
+        q = f"'{folder_id}' in parents and trashed = false"
+        files: list[dict[str, Any]] = []
+        page_token = None
+        while True:
+            kwargs: dict[str, Any] = {
+                "q": q,
+                "fields": "nextPageToken,files(id,name,mimeType,webViewLink)",
+                "pageSize": 100,
+                "supportsAllDrives": True,
+                "includeItemsFromAllDrives": True,
+            }
+            if page_token:
+                kwargs["pageToken"] = page_token
+            resp = self.drive.files().list(**kwargs).execute()
+            files.extend(resp.get("files") or [])
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+        return files
 
 
 def load_credentials() -> Any:
@@ -348,25 +515,62 @@ class DriveDocsSink:
             slot["id"] = meta["id"]
             slot["url"] = url
 
-        append_counts: dict[str, int] = {}
+        incoming: dict[str, list[Mapping[str, Any]]] = {}
         for rec in records:
             doc_name = str(rec.get("doc") or "needs-review")
             if doc_name not in topic_files:
                 meta = self.client.create_doc(self.folder_id, doc_name)
                 topic_files[doc_name] = meta
-            file_meta = topic_files[doc_name]
-            insert_at = self.client.doc_end_index(file_meta["id"])
-            self.client.batch_update(file_meta["id"], append_requests(rec, insert_at))
-            slot = index["topic_docs"].setdefault(
-                doc_name, {"id": file_meta["id"], "url": None, "count": 0}
-            )
-            slot["count"] = int(slot.get("count") or 0) + 1
-            append_counts[doc_name] = append_counts.get(doc_name, 0) + 1
+                slot = index["topic_docs"].setdefault(
+                    doc_name, {"id": meta["id"], "url": None, "count": 0}
+                )
+                slot["id"] = meta["id"]
+                slot["url"] = meta.get("webViewLink") or docs_url(meta["id"])
+            incoming.setdefault(doc_name, []).append(rec)
 
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         index_meta = self.client.create_doc(self.folder_id, INDEX_DOC_NAME)
         index_url = index_meta.get("webViewLink") or docs_url(index_meta["id"])
         index["index_doc"] = {"id": index_meta["id"], "url": index_url}
+
+        append_counts: dict[str, int] = {}
+        for name, file_meta in topic_files.items():
+            raw = self.client.get_document_text(file_meta["id"])
+            sections = parse_doc_sections(raw)
+            leftover = leftover_unparsed_text(raw, name)
+            known = {str(s.get("x_id") or "") for s in sections}
+            added = 0
+            for rec in incoming.get(name, []):
+                xid = str(rec.get("x_id") or "")
+                if not xid or xid in known:
+                    continue
+                sections.append(
+                    {
+                        "heading": section_heading(rec),
+                        "body": section_body(rec),
+                        "saved_at": str(rec.get("saved_at") or ""),
+                        "x_id": xid,
+                    }
+                )
+                known.add(xid)
+                added += 1
+            self.client.replace_doc_text(
+                file_meta["id"],
+                topic_document_text(
+                    name,
+                    sections,
+                    index.get("topic_docs") or {},
+                    index_url=index_url,
+                    leftover=leftover,
+                ),
+            )
+            slot = index["topic_docs"].setdefault(
+                name, {"id": file_meta["id"], "url": None, "count": 0}
+            )
+            slot["count"] = len(sections)
+            if added:
+                append_counts[name] = added
+
         self.client.replace_doc_text(
             index_meta["id"],
             index_document_text(
