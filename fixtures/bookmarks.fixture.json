@@ -1,0 +1,52 @@
+{
+  "count": 5,
+  "pages_fetched": 1,
+  "note": "Synthetic fixture posts for tests and dry-run. Not live X bookmarks.",
+  "posts": [
+    {
+      "id": "1000000000000000001",
+      "author_id": "fixture-author-ai",
+      "author": "fixture_ai",
+      "author_name": "Fixture AI",
+      "created_at": "2026-09-16T15:51:31.000Z",
+      "text": "[FIXTURE] Large language models and GPT-style evals for AI agents.",
+      "url": "https://x.com/i/web/status/1000000000000000001"
+    },
+    {
+      "id": "1000000000000000002",
+      "author_id": "fixture-author-fashion",
+      "author": "fixture_fashion",
+      "author_name": "Fixture Fashion",
+      "created_at": "2026-09-15T12:00:00.000Z",
+      "text": "[FIXTURE] Runway couture and streetwear outfit notes from fashion week.",
+      "url": "https://x.com/i/web/status/1000000000000000002"
+    },
+    {
+      "id": "1000000000000000003",
+      "author_id": "fixture-author-markets",
+      "author": "fixture_markets",
+      "author_name": "Fixture Markets",
+      "created_at": "2026-09-14T09:30:00.000Z",
+      "text": "[FIXTURE] Nasdaq and S&P futures, Fed rates, and bitcoin ETF flows.",
+      "url": "https://x.com/i/web/status/1000000000000000003"
+    },
+    {
+      "id": "1000000000000000004",
+      "author_id": "fixture-author-career",
+      "author": "fixture_career",
+      "author_name": "Fixture Career",
+      "created_at": "2026-09-13T18:05:00.000Z",
+      "text": "[FIXTURE] Hiring loop, resume rewrite, and interview prep for a staff role.",
+      "url": "https://x.com/i/web/status/1000000000000000004"
+    },
+    {
+      "id": "1000000000000000005",
+      "author_id": "fixture-author-review",
+      "author": "fixture_review",
+      "author_name": "Fixture Review",
+      "created_at": "2026-09-12T08:00:00.000Z",
+      "text": "[FIXTURE] Noted for later.",
+      "url": "https://x.com/i/web/status/1000000000000000005"
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "imported_x_ids": [
+    "1000000000000000001",
+    "1000000000000000002",
+    "1000000000000000003",
+    "1000000000000000004",
+    "1000000000000000005"
+  ],
+  "index_doc": {
+    "id": null,
+    "url": null
+  },
+  "topic_docs": {
+    "AI": {
+      "count": 1,
+      "id": null,
+      "url": null
+    },
+    "Career": {
+      "count": 1,
+      "id": null,
+      "url": null
+    },
+    "Fashion": {
+      "count": 1,
+      "id": null,
+      "url": null
+    },
+    "Markets": {
+      "count": 1,
+      "id": null,
+      "url": null
+    },
+    "Media": {
+      "count": 0,
+      "id": null,
+      "url": null
+    },
+    "Misc": {
+      "count": 0,
+      "id": null,
+      "url": null
+    },
+    "needs-review": {
+      "count": 1,
+      "id": null,
+      "url": null
+    }
+  }
+}

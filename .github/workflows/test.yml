@@ -1,0 +1,23 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Unit tests (no Drive network)
+        run: python -m unittest discover -s tests -v
+      - name: Dry-run against fixture
+        run: python -m x_bookmark sync --input fixtures/bookmarks.fixture.json --dry-run --out /tmp/preview-out
+      - name: Second dry-run skips imported x_ids
+        run: |
+          python -m x_bookmark sync --input fixtures/bookmarks.fixture.json --dry-run --out /tmp/preview-out | tee /tmp/second.txt
+          grep -q "skipped:  5" /tmp/second.txt
+          grep -q "imported: 0" /tmp/second.txt
